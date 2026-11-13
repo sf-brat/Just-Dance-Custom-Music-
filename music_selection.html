@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JD Legacy — подбор треков под хореографию</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230A0B0D'/%3E%3Crect x='3' y='6' width='2' height='7' fill='%23FF9E40'/%3E%3Crect x='7' y='3' width='2' height='10' fill='%2300FF66'/%3E%3Crect x='11' y='8' width='2' height='5' fill='%23FF9E40'/%3E%3C/svg%3E">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap');
+
+:root{
+  --bg:#0A0B0D;
+  --surface:#121316;
+  --surface-2:#17191D;
+  --border:#262A31;
+  --text:#FBFBFB;
+  --muted:#B8BCC4;
+  --faint:#69707A;
+  --signal:#FF9E40;        /* оригиналы из мода */
+  --signal-dim:rgba(255,158,64,.14);
+  --neon:#00FF66;          /* ваши треки */
+  --neon-dim:rgba(0,255,102,.12);
+  --good:#5FA8C7;
+  --warn:#D9A24A;
+  --bad:#D85C46;
+  --r-xs:4px; --r-sm:8px; --r-md:12px;
+  --ease:cubic-bezier(0.22,1,0.36,1);
+  --mono:'Space Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
+  --disp:'Bricolage Grotesque','Segoe UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{min-height:100dvh}
+body{
+  min-height:100dvh;
+  font:16px/1.6 var(--disp);
+  color:var(--text);
+  background:var(--bg);
+  -webkit-font-smoothing:antialiased;
+  position:relative;
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+  background-size:64px 64px;
+  animation:grid-pan 38s linear infinite;
+}
+@keyframes grid-pan{to{background-position:64px 64px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.wrap{max-width:1440px;margin:0 auto;padding:0 clamp(16px,3vw,40px);position:relative;z-index:1}
+
+/* ---------- header ---------- */
+header{padding:40px 0 8px}
+.brand{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+.brand h1{
+  font-family:var(--disp);font-weight:700;font-size:clamp(24px,3vw,36px);
+  letter-spacing:-.02em;line-height:1.1;
+}
+.brand .tag{
+  font-family:var(--mono);font-size:12px;color:var(--faint);
+  text-transform:uppercase;letter-spacing:.14em;
+}
+.sub{color:var(--muted);margin-top:10px;font-size:15px}
+.sub b{color:var(--signal);font-weight:600}
+.sub i{color:var(--neon);font-style:normal;font-weight:600}
+
+/* ---------- columns ---------- */
+.columns{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:28px}
+@media (max-width:900px){.columns{grid-template-columns:1fr}}
+.col{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md); }
+.col__head{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 18px;border-bottom:1px solid var(--border);
+}
+.col__head h2{font-size:15px;font-weight:600;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.dot--a{background:var(--signal);box-shadow:0 0 10px rgba(255,158,64,.5)}
+.dot--b{background:var(--neon);box-shadow:0 0 10px rgba(0,255,102,.5)}
+.count{font-family:var(--mono);font-size:12px;color:var(--faint)}
+
+.drop{
+  margin:14px;border:1px dashed var(--border);border-radius:var(--r-sm);
+  padding:26px 16px;text-align:center;color:var(--faint);
+  font-size:14px;transition:border-color .2s var(--ease),background .2s var(--ease),color .2s;
+  cursor:pointer;background:transparent;width:calc(100% - 28px);
+}
+.drop:hover,.drop:focus-visible{border-color:var(--muted);color:var(--muted)}
+.drop.over--a{border-color:var(--signal);background:var(--signal-dim);color:var(--signal)}
+.drop.over--b{border-color:var(--neon);background:var(--neon-dim);color:var(--neon)}
+.drop kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--muted)}
+
+.tracks{display:flex;flex-direction:column;height:auto;overflow-y: scroll;height:500px;}
+.track{
+  display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;
+  padding:10px 18px;border-top:1px solid var(--border);
+  transition:background .2s var(--ease);
+  
+}
+.track:hover{background:var(--surface-2)}
+.track__play{
+  width:34px;height:34px;border-radius:50%;border:1px solid var(--border);
+  background:transparent;color:var(--muted);display:grid;place-items:center;flex:none;
+  transition:color .15s,border-color .15s,box-shadow .2s var(--ease);
+}
+.track__play:hover{color:var(--text);border-color:var(--muted)}
+.col--a .track__play.on{color:var(--signal);border-color:var(--signal);box-shadow:0 0 12px rgba(255,158,64,.35)}
+.col--b .track__play.on{color:var(--neon);border-color:var(--neon);box-shadow:0 0 12px rgba(0,255,102,.35)}
+.track__body{min-width:0}
+.track__name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track__meta{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:2px;display:flex;gap:12px;flex-wrap:wrap}
+.track__meta .err{color:var(--bad)}
+.spark{display:block;margin-top:6px;width:100%;height:26px;opacity:.9}
+.track__rm{
+  border:none;background:transparent;color:var(--faint);font-size:16px;line-height:1;
+  padding:6px;border-radius:var(--r-xs);transition:color .15s;
+}
+.track__rm:hover{color:var(--bad)}
+.empty{padding:18px;text-align:center;color:var(--faint);font-size:13px}
+
+/* ---------- matrix ---------- */
+.matrix{margin-top:32px}
+.section-label{
+  font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:12px;display:flex;align-items:center;gap:10px;
+}
+.section-label::after{content:"";height:1px;flex:1;background:var(--border)}
+.mscroll{overflow-x:auto;border:1px solid var(--border);border-radius:var(--r-md);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:560px}
+th,td{padding:0;text-align:left}
+thead th{
+  font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400;
+  padding:12px 14px;border-bottom:1px solid var(--border);
+  max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;
+}
+thead th:first-child{color:var(--faint)}
+tbody th{
+  font-size:13px;font-weight:600;padding:0 14px;height:52px;max-width:220px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  border-right:1px solid var(--border);
+}
+td{border-top:1px solid var(--border)}
+.cell{
+  display:block;width:100%;height:52px;border:none;background:transparent;
+  font-family:var(--mono);font-size:13px;color:var(--text);
+  position:relative;transition:filter .15s;
+}
+.cell::before{content:"";position:absolute;inset:0;background:var(--c,transparent);opacity:.16}
+.cell span{position:relative}
+.cell:hover{filter:brightness(1.5)}
+.cell.best{outline:1px solid var(--c);outline-offset:-1px}
+.cell.sel{outline:2px solid var(--text);outline-offset:-2px}
+.legend{display:flex;gap:18px;margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--faint);flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;font-style:normal}
+
+/* ---------- detail ---------- */
+.detail{
+  margin-top:32px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-md);padding:24px clamp(16px,3vw,32px);
+}
+.detail__title{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+.detail__title h3{font-size:20px;font-weight:700;letter-spacing:-.02em}
+.verdict{font-family:var(--mono);font-size:12px;padding:4px 10px;border-radius:99px;letter-spacing:.06em}
+.verdict--g{color:var(--neon);background:var(--neon-dim)}
+.verdict--w{color:var(--warn);background:rgba(217,162,74,.14)}
+.verdict--b{color:var(--bad);background:rgba(216,92,70,.14)}
+.detail__names{font-family:var(--mono);font-size:12px;color:var(--faint);margin-bottom:20px}
+.detail__names b{font-weight:400}
+.detail__names .na{color:var(--signal)}
+.detail__names .nb{color:var(--neon)}
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+@media (max-width:900px){.compare{grid-template-columns:1fr}}
+.bars{display:flex;flex-direction:column;gap:14px}
+.bar__label{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:5px}
+.bar__label b{color:var(--text);font-weight:400}
+.bar{height:8px;border-radius:99px;background:var(--surface-2);position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;width:0;border-radius:99px;background:var(--signal);transition:width .6s var(--ease)}
+.bar i+i{left:auto;right:0;background:var(--neon)}
+.bar--split i:first-child{border-radius:99px 0 0 99px}
+.bar--split i+i{border-radius:0 99px 99px 0}
+.chartbox{border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);padding:14px}
+.chartbox canvas{width:100%;height:200px;display:block}
+.chartleg{display:flex;gap:16px;font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:8px}
+.chartleg s{text-decoration:none}
+.chartleg .la{color:var(--signal)}
+.chartleg .lb{color:var(--neon)}
+.tips{margin-top:18px;display:flex;flex-direction:column;gap:8px}
+.tip{
+  font-size:14px;color:var(--muted);padding:10px 14px;border:1px solid var(--border);
+  border-radius:var(--r-sm);background:var(--surface-2);
+}
+.tip b{color:var(--text);font-weight:600}
+
+footer{padding:48px 0 32px;color:var(--faint);font-family:var(--mono);font-size:11px;line-height:1.8}
+footer b{color:var(--muted);font-weight:400}
+
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>JD Legacy · подбор треков</h1>
+      <span class="tag">анализ темпа · тональности · энергетики</span>
+    </div>
+    <p class="sub">
+      Слева — <b>оригинальные песни</b> (к ним привязана хореография), справа — <i>ваши треки</i>, которыми хотите их заменить. <br>
+      Программа анализирует каждый файл прямо в браузере: темп (BPM), тональность, форму энергетики и яркость звучания —
+      и показывает, какая замена ляжет на танец лучше всего. Файлы никуда не отправляются.
+    </p>
+  </header>
+
+  <div class="columns">
+    <section class="col col--a">
+      <div class="col__head">
+        <h2><span class="dot dot--a"></span>Оригинальные песни</h2>
+        <span class="count" id="countA">0 треков</span>
+      </div>
+      <button class="drop" id="dropA" type="button">
+        Перетащите аудиофайлы сюда или нажмите для выбора<br>
+        <kbd>mp3 · wav · ogg · m4a · flac</kbd>
+      </button>
+      <input type="file" id="fileA" accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac" multiple hidden>
+      <div class="tracks" id="listA"></div>
+    </section>
+
+    <section class="col col--b">
+      <div class="col__head">
+        <h2><span class="dot dot--b"></span>Кандидаты</h2>
+        <span class="count" id="countB">0 треков</span>
+      </div>
+      <button class="drop" id="dropB" type="button">
+        Перетащите аудиофайлы сюда или нажмите для выбора<br>
+        <kbd>mp3 · wav · ogg · m4a · flac</kbd>
+      </button>
+      <input type="file" id="fileB" accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac" multiple hidden>
+      <div class="tracks" id="listB"></div>
+    </section>
+  </div>
+
+  <section class="matrix hidden" id="matrixSec">
+    <div class="section-label">01 / Таблица совпадений</div>
+    <div class="mscroll"><table id="matrix"></table></div>
+    <div class="legend">
+      <span><i style="background:var(--neon)"></i>75–100 · отлично</span>
+      <span><i style="background:var(--warn)"></i>55–74 · терпимо</span>
+      <span><i style="background:var(--bad)"></i>0–54 · не ляжет</span>
+      <span>рамка — лучший кандидат для строки; клик по ячейке — подробный разбор</span>
+    </div>
+  </section>
+
+  <section class="detail hidden" id="detailSec">
+    <div class="section-label">02 / Разбор пары</div>
+    <div class="detail__title">
+      <h3 id="dScore">—</h3>
+      <span class="verdict verdict--g" id="dVerdict">—</span>
+    </div>
+    <div class="detail__names" id="dNames"></div>
+    <div class="compare">
+      <div class="bars" id="dBars"></div>
+      <div class="chartbox">
+        <canvas id="dChart" width="900" height="200"></canvas>
+        <div class="chartleg">
+          <s class="la">— оригинал: энергетика</s>
+          <s class="lb">— ваш трек: энергетика</s>
+        </div>
+      </div>
+    </div>
+    <div class="tips" id="dTips"></div>
+  </section>
+
+  <footer>
+    <b>Как это работает:</b> BPM — автокорреляция спектрального потока; тональность — хрома-профиль по Крумханслу;
+    форма энергетики — корреляция RMS-огибающих (структура куплет/припев); яркость — спектральный центроид.
+    Анализ выполняется локально (Web Audio API), аудио не покидает компьютер.<br>
+    Совет для мода: идеальная замена — расхождение темпа ≤ 3 BPM и похожая структура энергетики, тогда движения попадут в бит без пересборки карты.
+  </footer>
+</div>
+<script>
+/* JD Legacy — подбор треков под хореографию.
+   Локальный анализ аудио: BPM, тональность, энергетика, спектральный центроид.
+   Всё выполняется в браузере, файлы не покидают компьютер. */
+
+'use strict';
+
+// ============================== DSP ядро ==============================
+
+function fftRadix2(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) {
+      let t = re[i]; re[i] = re[j]; re[j] = t;
+      t = im[i]; im[i] = im[j]; im[j] = t;
+    }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len;
+    const wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cwr = 1, cwi = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ur = re[i + k], ui = im[i + k];
+        const vr = re[i + k + len / 2] * cwr - im[i + k + len / 2] * cwi;
+        const vi = re[i + k + len / 2] * cwi + im[i + k + len / 2] * cwr;
+        re[i + k] = ur + vr; im[i + k] = ui + vi;
+        re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
+        const nwr = cwr * wr - cwi * wi;
+        cwi = cwr * wi + cwi * wr; cwr = nwr;
+      }
+    }
+  }
+}
+
+const HANN_CACHE = new Map();
+function hann(n) {
+  if (!HANN_CACHE.has(n)) {
+    const w = new Float32Array(n);
+    for (let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (n - 1)));
+    HANN_CACHE.set(n, w);
+  }
+  return HANN_CACHE.get(n);
+}
+
+// Моно-микс + ресемплинг (линейный) к целевой частоте
+function mixdownResample(buffer, targetRate) {
+  const ch = buffer.numberOfChannels;
+  const src = buffer.getChannelData(0);
+  const len = buffer.length;
+  const mono = new Float32Array(len);
+  if (ch === 1) mono.set(src);
+  else {
+    for (let c = 0; c < ch; c++) {
+      const d = buffer.getChannelData(c);
+      for (let i = 0; i < len; i++) mono[i] += d[i];
+    }
+    const inv = 1 / ch;
+    for (let i = 0; i < len; i++) mono[i] *= inv;
+  }
+  const ratio = buffer.sampleRate / targetRate;
+  const outLen = Math.floor(len / ratio);
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const pos = i * ratio;
+    const i0 = Math.floor(pos);
+    const f = pos - i0;
+    out[i] = mono[i0] * (1 - f) + (mono[Math.min(i0 + 1, len - 1)]) * f;
+  }
+  return out;
+}
+
+// Спектрограмма (модули), hop/window фиксированные
+function spectrogram(samples, sr, win = 1024, hop = 512) {
+  const w = hann(win);
+  const frames = Math.max(0, Math.floor((samples.length - win) / hop));
+  const bins = win / 2;
+  const mags = new Array(frames);
+  const re = new Float32Array(win), im = new Float32Array(win);
+  for (let f = 0; f < frames; f++) {
+    const off = f * hop;
+    for (let i = 0; i < win; i++) { re[i] = samples[off + i] * w[i]; im[i] = 0; }
+    fftRadix2(re, im);
+    const m = new Float32Array(bins);
+    for (let b = 0; b < bins; b++) m[b] = Math.hypot(re[b], im[b]);
+    mags[f] = m;
+  }
+  return { mags, frames, bins, sr, win, hop, binHz: sr / win };
+}
+
+// --- BPM: спектральный поток -> огибающая атак -> автокорреляция ---
+function estimateBPM(spec) {
+  const { mags, frames, sr, hop } = spec;
+  if (frames < 40) return null;
+  const flux = new Float32Array(frames);
+  for (let f = 1; f < frames; f++) {
+    let s = 0;
+    const cur = mags[f], prev = mags[f - 1];
+    for (let b = 0; b < cur.length; b++) {
+      const d = cur[b] - prev[b];
+      if (d > 0) s += d;
+    }
+    flux[f] = s;
+  }
+  // сглаживание и нормировка
+  let mean = 0;
+  for (let i = 0; i < frames; i++) mean += flux[i];
+  mean /= frames;
+  const env = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) env[i] = Math.max(0, flux[i] - mean);
+
+  const fps = sr / hop; // кадров в секунду
+  const minLag = Math.round(fps * 60 / 210); // 210 BPM
+  const maxLag = Math.round(fps * 60 / 55);  // 55 BPM
+  let bestLag = 0, bestVal = -1;
+  const ac = new Float32Array(maxLag + 1);
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let s = 0;
+    for (let i = 0; i + lag < frames; i++) s += env[i] * env[i + lag];
+    ac[lag] = s;
+    if (s > bestVal) { bestVal = s; bestLag = lag; }
+  }
+  if (!bestLag) return null;
+  // параболическая интерполяция лага для точности BPM
+  let lagF = bestLag;
+  if (bestLag > minLag && bestLag < maxLag) {
+    const y0 = ac[bestLag - 1], y1 = ac[bestLag], y2 = ac[bestLag + 1];
+    const den = y0 - 2 * y1 + y2;
+    if (Math.abs(den) > 1e-12) lagF = bestLag + 0.5 * (y0 - y2) / den;
+  }
+  let bpm = 60 * fps / lagF;
+  // приводим в танцевальный диапазон 80..180 (половинный/двойной темп)
+  while (bpm < 80) bpm *= 2;
+  while (bpm > 180) bpm /= 2;
+  const conf = Math.min(1, bestVal / (ac[minLag] || bestVal));
+  return { bpm: Math.round(bpm * 10) / 10, confidence: conf };
+}
+
+// --- Тональность: хрома + профили Крумхансла ---
+const K_MAJOR = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const K_MINOR = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+function estimateKey(spec) {
+  const { mags, frames, binHz } = spec;
+  if (frames < 20) return null;
+  const chroma = new Float64Array(12);
+  const step = Math.max(1, Math.floor(frames / 400)); // до ~400 кадров
+  let used = 0;
+  for (let f = 0; f < frames; f += step) {
+    const m = mags[f];
+    for (let b = 1; b < m.length; b++) {
+      const hz = b * binHz;
+      if (hz < 55 || hz > 2000) continue;
+      const mag = m[b];
+      if (mag <= 0) continue;
+      const midi = 69 + 12 * Math.log2(hz / 440);
+      const pc = ((Math.round(midi) % 12) + 12) % 12;
+      chroma[pc] += mag;
+    }
+    used++;
+  }
+  if (!used) return null;
+  const sum = chroma.reduce((a, v) => a + v, 0) || 1;
+  for (let i = 0; i < 12; i++) chroma[i] /= sum;
+
+  const corr = (profile, shift) => {
+    const mx = 1 / 12, my = profile.reduce((a, v) => a + v, 0) / 12;
+    let num = 0, dx = 0, dy = 0;
+    for (let i = 0; i < 12; i++) {
+      const x = chroma[(i + shift) % 12] - mx;
+      const y = profile[i] - my;
+      num += x * y; dx += x * x; dy += y * y;
+    }
+    return num / (Math.sqrt(dx * dy) || 1);
+  };
+
+  let best = { score: -2, root: 0, mode: 'major' };
+  for (let r = 0; r < 12; r++) {
+    const cMaj = corr(K_MAJOR, r);
+    if (cMaj > best.score) best = { score: cMaj, root: r, mode: 'major' };
+    const cMin = corr(K_MINOR, r);
+    if (cMin > best.score) best = { score: cMin, root: r, mode: 'minor' };
+  }
+  return {
+    root: best.root,
+    mode: best.mode,
+    label: NOTE_NAMES[best.root] + (best.mode === 'minor' ? 'm' : ''),
+    confidence: Math.max(0, Math.min(1, best.score)),
+  };
+}
+
+// --- Энергетика: RMS-огибающая, N сегментов, нормированная ---
+function energyCurve(samples, sr, n = 100) {
+  const seg = Math.max(1, Math.floor(samples.length / n));
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    const off = i * seg;
+    for (let j = 0; j < seg; j += 16) { // сабсэмплинг для скорости
+      const v = samples[off + j] || 0;
+      s += v * v;
+    }
+    curve[i] = Math.sqrt(s / Math.ceil(seg / 16));
+  }
+  let mx = 0;
+  for (let i = 0; i < n; i++) if (curve[i] > mx) mx = curve[i];
+  if (mx > 0) for (let i = 0; i < n; i++) curve[i] /= mx;
+  return Array.from(curve);
+}
+
+// --- Яркость и низы ---
+function spectralFeatures(spec) {
+  const { mags, frames, binHz } = spec;
+  let cSum = 0, cW = 0, low = 0, total = 0;
+  for (let f = 0; f < frames; f++) {
+    const m = mags[f];
+    for (let b = 1; b < m.length; b++) {
+      const hz = b * binHz, w = m[b];
+      cSum += hz * w; cW += w;
+      if (hz < 150) low += w;
+      if (hz < 4000) total += w;
+    }
+  }
+  return {
+    centroid: cW ? Math.round(cSum / cW) : 0,
+    lowRatio: total ? low / total : 0,
+  };
+}
+
+function analyzeBuffer(buffer) {
+  const TARGET = 11025;
+  const samples = mixdownResample(buffer, TARGET);
+  const spec = spectrogram(samples, TARGET);
+  const bpm = estimateBPM(spec);
+  const key = estimateKey(spec);
+  const sf = spectralFeatures(spec);
+  const curve = energyCurve(samples, TARGET);
+  // динамический диапазон огибающей (контраст куплет/припев)
+  const sorted = [...curve].sort((a, b) => a - b);
+  const p90 = sorted[Math.floor(sorted.length * 0.9)];
+  const p20 = sorted[Math.floor(sorted.length * 0.2)];
+  return {
+    duration: buffer.duration,
+    bpm: bpm ? bpm.bpm : null,
+    bpmConf: bpm ? bpm.confidence : 0,
+    key: key ? key.label : '—',
+    keyRoot: key ? key.root : -1,
+    keyMode: key ? key.mode : null,
+    keyConf: key ? key.confidence : 0,
+    centroid: sf.centroid,
+    lowRatio: sf.lowRatio,
+    curve,
+    dyn: p90 - p20,
+  };
+}
+
+// ============================== Сходство ==============================
+
+function pearson(a, b) {
+  const n = Math.min(a.length, b.length);
+  if (n < 4) return 0;
+  let ma = 0, mb = 0;
+  for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+  ma /= n; mb /= n;
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < n; i++) {
+    const x = a[i] - ma, y = b[i] - mb;
+    num += x * y; da += x * x; db += y * y;
+  }
+  const den = Math.sqrt(da * db);
+  return den ? num / den : 0;
+}
+
+function bpmScore(a, b) {
+  if (a == null || b == null) return { s: 0.5, d: null };
+  const direct = Math.abs(a - b);
+  const half = Math.abs(a * 2 - b), double = Math.abs(a - b * 2);
+  const d = Math.min(direct, half, double);
+  const effective = d === direct ? direct : d * 1.5; // штраф за половинный темп
+  return { s: Math.exp(-((effective / 6) ** 2)), d: direct };
+}
+
+function keyScore(A, B) {
+  if (A.keyRoot < 0 || B.keyRoot < 0) return 0.5;
+  const dist = Math.min(
+    (A.keyRoot - B.keyRoot + 12) % 12,
+    (B.keyRoot - A.keyRoot + 12) % 12
+  );
+  let base;
+  if (dist === 0) base = A.keyMode === B.keyMode ? 1 : 0.82;      // та же тоника
+  else if (dist === 3 && A.keyMode !== B.keyMode) base = 0.85;    // параллельные тональности
+  else if (dist === 5 || dist === 7) base = 0.7;                  // квинтовое соседство
+  else if (dist <= 2) base = 0.55;
+  else base = 0.35;
+  return base;
+}
+
+function similarity(A, B) {
+  const bpm = bpmScore(A.bpm, B.bpm);
+  const corr = pearson(A.curve, B.curve);
+  const energyS = Math.max(0, (corr + 1) / 2); // -1..1 -> 0..1
+  const cMax = Math.max(A.centroid, B.centroid, 1);
+  const brightS = 1 - Math.min(1, Math.abs(A.centroid - B.centroid) / cMax);
+  const durD = Math.abs(A.duration - B.duration);
+  const durS = Math.exp(-((durD / 20) ** 2));
+  const keyS = keyScore(A, B);
+  const score = 100 * (0.40 * bpm.s + 0.25 * energyS + 0.15 * keyS + 0.10 * brightS + 0.10 * durS);
+  return {
+    score: Math.round(score),
+    parts: { bpm: bpm.s, energy: energyS, key: keyS, bright: brightS, dur: durS },
+    bpmDiff: bpm.d,
+    durDiff: durD,
+    curveCorr: corr,
+  };
+}
+
+// ============================== Состояние и UI ==============================
+
+const state = {
+  A: [], // оригиналы мода
+  B: [], // мои треки
+  sel: null, // {ai, bi}
+};
+
+let audioCtx = null;
+function ctx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+let player = null; // {src, btn}
+function stopPlayback() {
+  if (player) {
+    try { player.src.stop(); } catch (_) {}
+    player.btn.classList.remove('on');
+    player.btn.innerHTML = ICON_PLAY;
+    player = null;
+  }
+}
+
+const ICON_PLAY = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+const ICON_STOP = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>';
+
+const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+
+async function decodeFile(file) {
+  const ab = await file.arrayBuffer();
+  return await ctx().decodeAudioData(ab);
+}
+
+async function addFiles(side, fileList) {
+  const arr = state[side];
+  for (const file of fileList) {
+    if (!/^audio\//.test(file.type) && !/\.(mp3|wav|ogg|m4a|flac|aac)$/i.test(file.name)) continue;
+    const item = { id: Math.random().toString(36).slice(2), name: file.name.replace(/\.[^.]+$/, ''), file, buffer: null, feat: null, status: 'decoding' };
+    arr.push(item);
+    renderList(side);
+    try {
+      item.buffer = await decodeFile(file);
+      item.status = 'analyzing';
+      renderList(side);
+      // даём UI перерисоваться перед тяжёлым DSP
+      await new Promise(r => setTimeout(r, 30));
+      item.feat = analyzeBuffer(item.buffer);
+      item.status = 'ready';
+    } catch (e) {
+      console.error(e);
+      item.status = 'error';
+    }
+    renderList(side);
+    renderMatrix();
+  }
+}
+
+function removeTrack(side, id) {
+  const arr = state[side];
+  const i = arr.findIndex(t => t.id === id);
+  if (i >= 0) { arr.splice(i, 1); stopPlayback(); renderList(side); renderMatrix(); }
+}
+
+function drawSpark(canvas, curve, color) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 300, h = 26;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext('2d');
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, w, h);
+  const n = curve.length;
+  const bw = w / n;
+  g.fillStyle = color;
+  for (let i = 0; i < n; i++) {
+    const bh = Math.max(1, curve[i] * (h - 3));
+    g.fillRect(i * bw, h - bh, Math.max(1, bw - 1), bh);
+  }
+}
+
+function renderList(side) {
+  const list = document.getElementById(side === 'A' ? 'listA' : 'listB');
+  const color = side === 'A' ? '#FF9E40' : '#00FF66';
+  const arr = state[side];
+  document.getElementById(side === 'A' ? 'countA' : 'countB').textContent =
+    `${arr.length} ${plural(arr.length, 'трек', 'трека', 'треков')}`;
+  list.innerHTML = '';
+  if (!arr.length) {
+    list.innerHTML = '<div class="empty">Пока пусто — добавьте аудиофайлы</div>';
+    return;
+  }
+  for (const t of arr) {
+    const row = document.createElement('div');
+    row.className = 'track';
+    let meta;
+    if (t.status === 'decoding') meta = '<span>чтение файла…</span>';
+    else if (t.status === 'analyzing') meta = '<span>анализ звука…</span>';
+    else if (t.status === 'error') meta = '<span class="err">не удалось прочитать файл</span>';
+    else meta = `<span>${t.feat.bpm ? t.feat.bpm + ' BPM' : 'BPM ?'}</span><span>${t.feat.key}</span><span>${fmtTime(t.feat.duration)}</span>`;
+    row.innerHTML = `
+      <button class="track__play" type="button" title="Слушать" ${t.status !== 'ready' ? 'disabled' : ''}>${ICON_PLAY}</button>
+      <div class="track__body">
+        <div class="track__name" title="${esc(t.file.name)}">${esc(t.name)}</div>
+        <div class="track__meta">${meta}</div>
+        ${t.status === 'ready' ? '<canvas class="spark"></canvas>' : ''}
+      </div>
+      <button class="track__rm" type="button" title="Убрать">×</button>`;
+    const playBtn = row.querySelector('.track__play');
+    playBtn.addEventListener('click', () => togglePlay(t, playBtn));
+    row.querySelector('.track__rm').addEventListener('click', () => removeTrack(side, t.id));
+    list.appendChild(row);
+    if (t.status === 'ready') drawSpark(row.querySelector('.spark'), t.feat.curve, color);
+  }
+}
+
+function togglePlay(t, btn) {
+  if (player && player.btn === btn) { stopPlayback(); return; }
+  stopPlayback();
+  const c = ctx();
+  const src = c.createBufferSource();
+  src.buffer = t.buffer;
+  src.connect(c.destination);
+  src.start();
+  btn.classList.add('on');
+  btn.innerHTML = ICON_STOP;
+  player = { src, btn };
+  src.onended = () => { if (player && player.src === src) stopPlayback(); };
+}
+
+function plural(n, a, b, c) {
+  const m = n % 100, d = n % 10;
+  if (m > 10 && m < 20) return c;
+  if (d > 1 && d < 5) return b;
+  if (d === 1) return a;
+  return c;
+}
+
+function esc(s) {
+  return s.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// ============================== Матрица и разбор ==============================
+
+function scoreColor(s) {
+  if (s >= 75) return 'var(--neon)';
+  if (s >= 55) return 'var(--warn)';
+  return 'var(--bad)';
+}
+
+function allReady() {
+  return state.A.length && state.B.length &&
+    state.A.every(t => t.status === 'ready') &&
+    state.B.every(t => t.status === 'ready');
+}
+
+function renderMatrix() {
+  const sec = document.getElementById('matrixSec');
+  const table = document.getElementById('matrix');
+  const hasA = state.A.length, hasB = state.B.length;
+  if (!hasA || !hasB) { sec.classList.add('hidden'); document.getElementById('detailSec').classList.add('hidden'); return; }
+  sec.classList.remove('hidden');
+
+  const sims = state.A.map(a => state.B.map(b =>
+    (a.status === 'ready' && b.status === 'ready') ? similarity(a.feat, b.feat) : null));
+
+  let html = '<thead><tr><th>оригинал \\ кандидат</th>';
+  state.B.forEach(b => { html += `<th title="${esc(b.file.name)}">${esc(b.name)}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  state.A.forEach((a, ai) => {
+    html += `<tr><th title="${esc(a.file.name)}">${esc(a.name)}</th>`;
+    // лучший в строке
+    let best = -1, bestS = -1;
+    sims[ai].forEach((s, bi) => { if (s && s.score > bestS) { bestS = s.score; best = bi; } });
+    state.B.forEach((b, bi) => {
+      const s = sims[ai][bi];
+      if (!s) { html += '<td><span class="cell"><span>…</span></span></td>'; return; }
+      const cls = ['cell'];
+      if (bi === best) cls.push('best');
+      if (state.sel && state.sel.ai === ai && state.sel.bi === bi) cls.push('sel');
+      html += `<td><button type="button" class="${cls.join(' ')}" style="--c:${scoreColor(s.score)}" data-ai="${ai}" data-bi="${bi}"><span>${s.score}</span></button></td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody>';
+  table.innerHTML = html;
+  table.querySelectorAll('button.cell').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.sel = { ai: +btn.dataset.ai, bi: +btn.dataset.bi };
+      renderMatrix();
+      renderDetail();
+    });
+  });
+  // сохраняем выбранную ячейку, если она ещё валидна
+  if (state.sel && sims[state.sel.ai] && sims[state.sel.ai][state.sel.bi]) renderDetail();
+  else document.getElementById('detailSec').classList.add('hidden');
+}
+
+function bar(label, va, vb, fmtA, fmtB) {
+  const max = Math.max(va, vb, 1e-9);
+  const pa = Math.round(100 * va / max), pb = Math.round(100 * vb / max);
+  return `<div>
+    <div class="bar__label"><span>${label}</span><b>${fmtA} · ${fmtB}</b></div>
+    <div class="bar bar--split"><i style="width:${pa}%"></i><i style="width:${pb}%"></i></div>
+  </div>`;
+}
+
+function renderDetail() {
+  const sec = document.getElementById('detailSec');
+  const { ai, bi } = state.sel;
+  const A = state.A[ai], B = state.B[bi];
+  if (!A || !B || A.status !== 'ready' || B.status !== 'ready') { sec.classList.add('hidden'); return; }
+  const s = similarity(A.feat, B.feat);
+  sec.classList.remove('hidden');
+
+  document.getElementById('dScore').textContent = `Совпадение: ${s.score} / 100`;
+  const v = document.getElementById('dVerdict');
+  if (s.score >= 75) { v.className = 'verdict verdict--g'; v.textContent = 'ЛЯЖЕТ НА ТАНЕЦ'; }
+  else if (s.score >= 55) { v.className = 'verdict verdict--w'; v.textContent = 'СРЕДНЕ — ПРОВЕРЬТЕ ВРУЧНУЮ'; }
+  else { v.className = 'verdict verdict--b'; v.textContent = 'СКОРЕЕ НЕ ПОДОЙДЁТ'; }
+
+  document.getElementById('dNames').innerHTML =
+    `<b class="na">${esc(A.name)}</b> ← заменяется на → <b class="nb">${esc(B.name)}</b>`;
+
+  const fa = A.feat, fb = B.feat;
+  document.getElementById('dBars').innerHTML =
+    bar('Темп, BPM', fa.bpm || 0, fb.bpm || 0, fa.bpm ?? '—', fb.bpm ?? '—') +
+    bar('Яркость (спектральный центроид), Гц', fa.centroid, fb.centroid, fa.centroid, fb.centroid) +
+    bar('Доля низких частот', fa.lowRatio, fb.lowRatio, fa.lowRatio.toFixed(2), fb.lowRatio.toFixed(2)) +
+    bar('Контраст куплет/припев', fa.dyn, fb.dyn, fa.dyn.toFixed(2), fb.dyn.toFixed(2)) +
+    bar('Длительность, с', fa.duration, fb.duration, fmtTime(fa.duration), fmtTime(fb.duration)) +
+    `<div class="bar__label" style="margin-top:2px"><span>Тональность</span><b>${fa.key} · ${fb.key}</b></div>`;
+
+  drawCompareChart(document.getElementById('dChart'), fa.curve, fb.curve);
+
+  const tips = [];
+  if (s.bpmDiff != null) {
+    if (s.bpmDiff <= 3) tips.push(`<b>Темп почти идеальный</b> — расхождение ${s.bpmDiff.toFixed(1)} BPM. Движения попадут в бит без правки карты.`);
+    else if (s.bpmDiff <= 8) tips.push(`Расхождение темпа ${s.bpmDiff.toFixed(1)} BPM — трек можно слегка ускорить/замедлить (Audacity: «Изменить темп») до ${fa.bpm} BPM.`);
+    else if (fa.bpm && fb.bpm && Math.abs(fa.bpm - fb.bpm * 2) <= 5 || Math.abs(fa.bpm * 2 - fb.bpm) <= 5)
+      tips.push(`Темпы отличаются ровно вдвое (${fa.bpm} против ${fb.bpm} BPM) — движения лягут на каждый второй бит, часто это приемлемо для медленных кусков.`);
+    else tips.push(`<b>Темп сильно не совпадает</b>: ${fa.bpm ?? '?'} против ${fb.bpm ?? '?'} BPM. Для танца это критично — рассмотрите другой трек.`);
+  }
+  if (s.curveCorr >= 0.6) tips.push(`Структура энергетики похожа (корреляция ${s.curveCorr.toFixed(2)}) — куплеты и припевы приходятся на те же места, акценты хореографии совпадут со взрывами музыки.`);
+  else if (s.curveCorr < 0.2) tips.push(`Структура энергетики сильно отличается — там, где в оригинале припев-взрыв, у вашего трека может быть тихий куплет. Смотрите график выше.`);
+  if (fa.keyRoot >= 0 && fb.keyRoot >= 0) {
+    if (fa.key === fb.key) tips.push(`Тональность совпадает (${fa.key}) — бонус к слитности звучания.`);
+  }
+  if (Math.abs(fa.duration - fb.duration) > 15)
+    tips.push(`Длительность отличается на ${Math.round(Math.abs(fa.duration - fb.duration))} с — после замены трек может оборваться раньше конца хореографии или играть дальше в тишину.`);
+  if (!tips.length) tips.push('Параметры в допустимых пределах — проверьте на слух кнопками воспроизведения.');
+  document.getElementById('dTips').innerHTML = tips.map(t => `<div class="tip">${t}</div>`).join('');
+}
+
+function drawCompareChart(canvas, ca, cb) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 900, h = 200;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext('2d');
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, w, h);
+
+  // сетка
+  g.strokeStyle = 'rgba(255,255,255,.06)';
+  g.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = (h / 4) * i;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+  }
+  for (let i = 1; i < 8; i++) {
+    const x = (w / 8) * i;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+  }
+
+  const draw = (curve, color, fill) => {
+    const n = curve.length;
+    g.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * w;
+      const y = h - 8 - curve[i] * (h - 24);
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    if (fill) {
+      g.save();
+      g.lineTo(w, h); g.lineTo(0, h); g.closePath();
+      g.globalAlpha = 0.10; g.fillStyle = color; g.fill();
+      g.restore();
+      g.beginPath();
+      for (let i = 0; i < n; i++) {
+        const x = (i / (n - 1)) * w;
+        const y = h - 8 - curve[i] * (h - 24);
+        i ? g.lineTo(x, y) : g.moveTo(x, y);
+      }
+    }
+    g.strokeStyle = color; g.lineWidth = 1.8; g.stroke();
+  };
+  draw(ca, '#FF9E40', true);
+  draw(cb, '#00FF66', true);
+}
+
+// ============================== Ввод файлов ==============================
+
+function bindDrop(zoneId, inputId, side) {
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(inputId);
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+  input.addEventListener('change', () => { addFiles(side, [...input.files]); input.value = ''; });
+  const over = e => { e.preventDefault(); zone.classList.add(side === 'A' ? 'over--a' : 'over--b'); };
+  const leave = () => zone.classList.remove('over--a', 'over--b');
+  zone.addEventListener('dragover', over);
+  zone.addEventListener('dragleave', leave);
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); leave();
+    if (e.dataTransfer.files.length) addFiles(side, [...e.dataTransfer.files]);
+  });
+}
+
+bindDrop('dropA', 'fileA', 'A');
+bindDrop('dropB', 'fileB', 'B');
+renderList('A');
+renderList('B');
+
+console.log('[app] ready');
+
+
+</script>
+</body>
+</html>
